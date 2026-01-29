@@ -1,0 +1,228 @@
+{
+  "name": "Daily AI Content Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Daily 7AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 304]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "date",
+              "name": "currentDate",
+              "value": "={{ $now.format('yyyy-MM-dd') }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "recipientEmail",
+              "value": "YOUR_EMAIL@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup",
+      "name": "Setup Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [224, 304]
+    },
+    {
+      "parameters": {
+        "text": "=Today is {{ $json.currentDate }}.\n\nDo exactly 3 Google searches:\n1. \"AI tools news January 2026\"\n2. \"AI jobs hiring 2026\"\n3. \"ChatGPT Claude updates\"\n\nAfter EACH search, note one interesting finding.\n\nAfter your 3rd search, STOP and return this JSON immediately:\n\n```json\n[\n  {\"title\": \"Headline 1\", \"summary\": \"What happened\", \"source\": \"Source name\"},\n  {\"title\": \"Headline 2\", \"summary\": \"What happened\", \"source\": \"Source name\"},\n  {\"title\": \"Headline 3\", \"summary\": \"What happened\", \"source\": \"Source name\"},\n  {\"title\": \"Headline 4\", \"summary\": \"What happened\", \"source\": \"Source name\"},\n  {\"title\": \"Headline 5\", \"summary\": \"What happened\", \"source\": \"Source name\"}\n]\n```\n\nIMPORTANT: Do NOT do more than 3 searches. Return JSON after search 3.",
+        "options": {
+          "maxIterations": 8,
+          "systemMessage": "You are a quick news researcher. Do exactly 3 searches, then return JSON. Never do more than 3 searches. Be fast.",
+          "returnIntermediateSteps": false
+        },
+        "promptType": "define"
+      },
+      "id": "researcher",
+      "name": "AI Research Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [448, 304],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "mode": "id",
+          "value": "claude-sonnet-4-20250514"
+        },
+        "options": {
+          "maxTokensToSample": 4096,
+          "temperature": 0.7
+        }
+      },
+      "id": "claude-research",
+      "name": "Claude (Research)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [448, 528],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "YOUR_ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Use this tool to search Google for current news, articles, and information about AI tools, automation, careers, and technology trends. Returns search results with titles, snippets, and links.",
+        "options": {
+          "gl": "us",
+          "device": "desktop",
+          "google_domain": "google.com",
+          "hl": "en"
+        }
+      },
+      "id": "serp-tool",
+      "name": "Google Search",
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [608, 528],
+      "credentials": {
+        "serpApi": {
+          "id": "YOUR_SERPAPI_CREDENTIAL_ID",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse research output\nconst input = $input.first().json;\nconst output = input.output || '';\n\nlet stories = [];\n\ntry {\n  let cleanOutput = output\n    .replace(/```json\\n?/g, '')\n    .replace(/```\\n?/g, '')\n    .trim();\n  \n  const jsonMatch = cleanOutput.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/g);\n  if (jsonMatch) {\n    stories = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  console.log('Parse error:', e.message);\n}\n\n// Fallback if parsing failed\nif (!stories.length) {\n  stories = [\n    {\n      title: 'AI Assistants Are Getting Better at Understanding Context',\n      summary: 'The latest updates to AI tools focus on understanding what you actually mean, not just what you type.',\n      quote: 'We are focused on making AI that truly understands user intent.',\n      quote_source: 'Industry analyst',\n      why_it_matters: 'Less time explaining yourself to AI tools means more time getting actual work done.',\n      source_url: 'Tech Industry Report'\n    },\n    {\n      title: 'Companies Are Hiring for AI-Adjacent Roles, Not Just AI Experts',\n      summary: 'The hottest jobs are not for AI engineers, but for people who can work alongside AI tools.',\n      quote: 'We need people who understand the business and can guide AI, not just build it.',\n      quote_source: 'HR Director',\n      why_it_matters: 'You do not need to become a programmer to benefit from the AI job market.',\n      source_url: 'Hiring Trends Report'\n    },\n    {\n      title: 'Small Businesses Are Finding AI More Accessible Than Expected',\n      summary: 'New tools are making automation possible without technical expertise or big budgets.',\n      quote: 'The barrier to entry has dropped dramatically in the past year.',\n      quote_source: 'Small Business Technology Survey',\n      why_it_matters: 'Automation is no longer just for companies with IT departments.',\n      source_url: 'Business Technology News'\n    }\n  ];\n}\n\nconst currentDate = $('Setup Variables').first().json.currentDate;\nconst recipientEmail = $('Setup Variables').first().json.recipientEmail;\n\nreturn {\n  json: {\n    currentDate,\n    recipientEmail,\n    stories: stories.slice(0, 5),\n    storyCount: Math.min(stories.length, 5)\n  }\n};"
+      },
+      "id": "parse-research",
+      "name": "Parse Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 304]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write 5 engaging articles for a general professional audience based on these story ideas:\n\n{{ JSON.stringify($json.stories, null, 2) }}\n\nWRITING GUIDELINES:\n\n**Tone & Style:**\n- Write like a friendly, knowledgeable colleague explaining news over coffee\n- Use plain English - avoid jargon, buzzwords, and corporate speak\n- Be conversational but informative, like a good newsletter\n- Write for someone who's curious about AI but not technical\n- NEVER use phrases like \"landscape\", \"leverage\", \"cutting-edge\", \"game-changer\", \"revolutionize\", \"seamlessly\", \"robust\", \"empower\"\n\n**Content Requirements:**\n- Lead with WHY this matters to the reader's daily life or career\n- Include direct quotes from sources when available (use quotation marks)\n- Explain technical concepts in simple terms with real-world analogies\n- Give concrete examples people can relate to\n- End with practical takeaways - what should the reader DO with this information?\n\n**Format for EACH article:**\n\n---\n\n## Article [NUMBER]: [HEADLINE - make it specific and intriguing, not clickbait]\n\n**Meta Description:** [150 chars - summarize the key insight]\n\n[ARTICLE BODY - 500-800 words]\n- Open with a hook that connects to the reader's experience\n- Use short paragraphs (2-3 sentences max)\n- Include at least one direct quote from a source\n- Use subheadings (###) to break up sections\n- Close with what this means for the reader\n\n**Key Takeaways:**\n- [Actionable insight 1]\n- [Actionable insight 2]\n- [Actionable insight 3]\n\n**X Post:** [A genuinely interesting observation in 280 chars - not salesy]\n\n---\n\nWrite all 5 articles now. Make each one feel like something you'd actually want to read and share.",
+        "options": {
+          "systemMessage": "You write like a smart friend who happens to know a lot about AI - approachable, clear, and genuinely helpful. You explain things so anyone can understand. You never sound like a corporate press release or a hype-filled tech blog. You cite your sources and use real quotes. Your writing is the kind people forward to colleagues with 'thought you'd find this interesting.'",
+          "maxIterations": 5,
+          "returnIntermediateSteps": false
+        }
+      },
+      "id": "writer",
+      "name": "Article Writer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [880, 304]
+    },
+    {
+      "parameters": {
+        "model": {
+          "mode": "id",
+          "value": "claude-sonnet-4-20250514"
+        },
+        "options": {
+          "maxTokensToSample": 16000,
+          "temperature": 0.8
+        }
+      },
+      "id": "claude-writer",
+      "name": "Claude (Writer)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [880, 528],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "YOUR_ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format articles into HTML email\nconst input = $input.first().json;\nconst articleContent = input.output || '';\nconst setupData = $('Parse Research').first().json;\nconst currentDate = setupData.currentDate;\nconst recipientEmail = setupData.recipientEmail;\n\n// Parse the markdown articles into structured format\nconst articleBlocks = articleContent.split(/---+/).filter(block => block.trim());\n\nlet emailHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.7; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }\n    .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }\n    h1 { color: #1a1a2e; border-bottom: 3px solid #4361ee; padding-bottom: 15px; margin-bottom: 10px; }\n    .subtitle { color: #666; margin-bottom: 30px; }\n    .article { background: #fafafa; padding: 25px; margin: 25px 0; border-radius: 10px; border-left: 4px solid #4361ee; }\n    .article h2 { color: #1a1a2e; font-size: 22px; margin-top: 0; margin-bottom: 10px; }\n    .article h3 { color: #4361ee; font-size: 16px; margin-top: 20px; }\n    .meta-desc { color: #666; font-style: italic; font-size: 14px; margin-bottom: 20px; padding: 10px; background: #f0f0f0; border-radius: 5px; }\n    .content { font-size: 15px; }\n    .content p { margin: 15px 0; }\n    .takeaways { background: #e8f4fd; padding: 15px 20px; border-radius: 8px; margin-top: 20px; }\n    .takeaways h4 { margin: 0 0 10px 0; color: #4361ee; }\n    .takeaways ul { margin: 0; padding-left: 20px; }\n    .takeaways li { margin: 8px 0; }\n    .x-post { background: linear-gradient(135deg, #1da1f2, #0d8ecf); color: white; padding: 15px 20px; border-radius: 8px; margin-top: 15px; }\n    .x-post strong { display: block; margin-bottom: 8px; }\n    .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #888; font-size: 13px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <h1>🤖 Daily AI Content</h1>\n    <p class=\"subtitle\"><strong>Date:</strong> ${currentDate} | <strong>Articles:</strong> ${articleBlocks.length}</p>\n`;\n\narticleBlocks.forEach((block, index) => {\n  const headlineMatch = block.match(/##\\s*Article\\s*\\d*:?\\s*(.+?)(?:\\n|$)/i) || block.match(/##\\s*(.+?)(?:\\n|$)/);\n  const metaMatch = block.match(/\\*\\*Meta Description:\\*\\*\\s*(.+?)(?:\\n|$)/i);\n  const takeawaysMatch = block.match(/\\*\\*Key Takeaways:\\*\\*([\\s\\S]*?)(?:\\*\\*X Post|$)/i);\n  const xPostMatch = block.match(/\\*\\*X Post:\\*\\*\\s*(.+?)(?:\\n|$)/i);\n  \n  const headline = headlineMatch ? headlineMatch[1].trim() : `Article ${index + 1}`;\n  const metaDesc = metaMatch ? metaMatch[1].trim() : '';\n  const xPost = xPostMatch ? xPostMatch[1].trim() : '';\n  \n  let content = block;\n  content = content.replace(/##\\s*Article\\s*\\d*:?\\s*.+?\\n/gi, '');\n  content = content.replace(/\\*\\*Meta Description:\\*\\*.+?\\n/gi, '');\n  content = content.replace(/\\*\\*Key Takeaways:\\*\\*[\\s\\S]*$/gi, '');\n  content = content.trim();\n  \n  content = content\n    .replace(/###\\s*(.+)/g, '<h3>$1</h3>')\n    .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')\n    .replace(/\\n\\n/g, '</p><p>')\n    .replace(/^/, '<p>').replace(/$/, '</p>');\n  \n  let takeawaysHtml = '';\n  if (takeawaysMatch) {\n    const takeawaysList = takeawaysMatch[1].match(/[-•]\\s*(.+)/g) || [];\n    if (takeawaysList.length) {\n      takeawaysHtml = `\n        <div class=\"takeaways\">\n          <h4>📌 Key Takeaways</h4>\n          <ul>\n            ${takeawaysList.map(t => `<li>${t.replace(/^[-•]\\s*/, '')}</li>`).join('')}\n          </ul>\n        </div>`;\n    }\n  }\n  \n  emailHtml += `\n    <div class=\"article\">\n      <h2>${headline}</h2>\n      ${metaDesc ? `<div class=\"meta-desc\">${metaDesc}</div>` : ''}\n      <div class=\"content\">${content}</div>\n      ${takeawaysHtml}\n      ${xPost ? `<div class=\"x-post\"><strong>𝕏 Draft Post:</strong>${xPost}</div>` : ''}\n    </div>`;\n});\n\nemailHtml += `\n    <div class=\"footer\">\n      <p>Generated by AI Content Workflow</p>\n      <p>Review, edit as needed, and publish!</p>\n    </div>\n  </div>\n</body>\n</html>`;\n\nreturn {\n  json: {\n    recipientEmail,\n    currentDate,\n    subject: `🤖 Daily AI Content - ${currentDate}`,\n    htmlBody: emailHtml,\n    articleCount: articleBlocks.length\n  }\n};"
+      },
+      "id": "format-email",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1152, 304]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.recipientEmail }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1328, 304],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 7AM Trigger": {
+      "main": [[{"node": "Setup Variables", "type": "main", "index": 0}]]
+    },
+    "Setup Variables": {
+      "main": [[{"node": "AI Research Agent", "type": "main", "index": 0}]]
+    },
+    "AI Research Agent": {
+      "main": [[{"node": "Parse Research", "type": "main", "index": 0}]]
+    },
+    "Claude (Research)": {
+      "ai_languageModel": [[{"node": "AI Research Agent", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Google Search": {
+      "ai_tool": [[{"node": "AI Research Agent", "type": "ai_tool", "index": 0}]]
+    },
+    "Parse Research": {
+      "main": [[{"node": "Article Writer", "type": "main", "index": 0}]]
+    },
+    "Article Writer": {
+      "main": [[{"node": "Format Email", "type": "main", "index": 0}]]
+    },
+    "Claude (Writer)": {
+      "ai_languageModel": [[{"node": "Article Writer", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Format Email": {
+      "main": [[{"node": "Send Email", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
